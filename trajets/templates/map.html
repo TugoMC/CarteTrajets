@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Carte des Itinéraires</title>
+    {% load static %}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"
+    />
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        height: 100%;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+      h1 {
+        margin-top: 0;
+        color: #333;
+        transition: color 0.3s;
+      }
+      #lineNameContainer {
+        margin-bottom: 20px;
+      }
+      #lineName {
+        padding: 10px;
+        font-size: 16px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        width: 100%;
+        max-width: 300px;
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+      }
+      #map {
+        flex-grow: 1;
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .theme-toggle {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+      }
+      .toggle-label {
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+        background-color: #ccc;
+        border-radius: 34px;
+        position: relative;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+      .toggle-label:after {
+        content: "";
+        position: absolute;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background-color: white;
+        top: 4px;
+        left: 4px;
+        transition: transform 0.3s;
+      }
+      #themeToggle:checked + .toggle-label {
+        background-color: #2196f3;
+      }
+      #themeToggle:checked + .toggle-label:after {
+        transform: translateX(26px);
+      }
+      #themeToggle {
+        display: none;
+      }
+
+      /* Dark theme styles */
+      body.dark-theme {
+        background-color: #26242e;
+        color: white;
+      }
+      body.dark-theme h1 {
+        color: white;
+      }
+      body.dark-theme #lineName {
+        background-color: #34323d;
+        color: white;
+        border-color: #555;
+      }
+
+      @media (max-width: 600px) {
+        .container {
+          padding: 10px;
+        }
+        h1 {
+          font-size: 24px;
+        }
+        .theme-toggle {
+          top: 10px;
+          right: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Carte des Itinéraires</h1>
+      <div class="theme-toggle">
+        <input type="checkbox" id="themeToggle" />
+        <label for="themeToggle" class="toggle-label"></label>
+      </div>
+      <div id="lineNameContainer">
+        <label for="lineName">Nom de l'itinéraire :</label>
+        <input
+          type="text"
+          id="lineName"
+          placeholder="Entrez le nom de l'itinéraire"
+        />
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+    <script>
+      var map, lightLayer, darkLayer, drawnItems;
+
+      function initMap() {
+        map = L.map("map").setView([5.36, -4.0083], 13);
+
+        lightLayer = L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+          {
+            maxZoom: 19,
+            attribution: "© OpenStreetMap & CartoDB",
+          }
+        ).addTo(map);
+
+        darkLayer = L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          {
+            attribution: "© OpenStreetMap contributors, © CARTO",
+          }
+        );
+
+        drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        var drawControl = new L.Control.Draw({
+          edit: {
+            featureGroup: drawnItems,
+          },
+          draw: {
+            polyline: true,
+            polygon: false,
+            circle: false,
+            rectangle: false,
+            marker: false,
+          },
+        });
+        map.addControl(drawControl);
+
+        map.on(L.Draw.Event.CREATED, function (event) {
+          var layer = event.layer;
+          drawnItems.addLayer(layer);
+          var lineName = document.getElementById("lineName").value;
+          if (lineName) {
+            layer.bindTooltip(lineName).openTooltip();
+            layer.lineName = lineName;
+          }
+          var coords = layer.getLatLngs();
+          console.log("Itinéraire tracé : ", coords, "Nom : ", lineName);
+
+          fetch("/trajets/save_route/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": "{{ csrf_token }}",
+            },
+            body: JSON.stringify({ coordinates: coords, name: lineName }),
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              console.log("Itinéraire sauvegardé :", data);
+            });
+        });
+      }
+
+      function toggleTheme() {
+        document.body.classList.toggle("dark-theme");
+        if (document.body.classList.contains("dark-theme")) {
+          map.removeLayer(lightLayer);
+          map.addLayer(darkLayer);
+        } else {
+          map.removeLayer(darkLayer);
+          map.addLayer(lightLayer);
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        initMap();
+        document
+          .getElementById("themeToggle")
+          .addEventListener("change", toggleTheme);
+      });
+    </script>
+  </body>
+</html>
